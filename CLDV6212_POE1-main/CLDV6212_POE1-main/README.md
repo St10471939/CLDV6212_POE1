@@ -195,11 +195,11 @@ CLDV6212_POE1/
 
 | Member | Contributions |
 |--------|---------------|
-| _Member 1_ | _Update with your contributions_ |
-| _Member 2_ | _Update with your contributions_ |
-| _Member 3_ | _Update with your contributions_ |
+| _Member 1_ | St10471939 |
+| _Member 2_ | St10435159|
+| _Member 3_ | ST10486778 |
 
-## Demo Video
+## Video
 
 YouTube walkthrough: _[Add your unlisted YouTube link here]_
 
@@ -209,9 +209,3 @@ The video demonstrates:
 - Running the Postman collection against the live API
 - Brief code walkthrough of menu and document functions
 
-## Docker Hub Links
-
-- Functions: `https://hub.docker.com/r/<dockerhub_username>/coffeenchill-functions`
-- Azurite: `https://hub.docker.com/r/<dockerhub_username>/coffeenchill-Azurite`
-
-Replace `<dockerhub_username>` with your Docker Hub username before publishing.

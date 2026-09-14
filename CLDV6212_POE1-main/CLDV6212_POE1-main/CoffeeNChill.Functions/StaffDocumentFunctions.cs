@@ -1,11 +1,9 @@
-using System.Net;
-using System.Text.Json;
+using System.Text;
 using CoffeeNChill.Services;
-using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
-using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
-using Microsoft.Net.Http.Headers;
 
 namespace CoffeeNChill.Functions;
 
@@ -35,46 +33,47 @@ public class StaffDocumentFunctions
     }
 
     [Function("UploadStaffDocument")]
-    public async Task<HttpResponseData> UploadStaffDocument(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "documents/upload")] HttpRequestData req)
+    public async Task<IActionResult> UploadStaffDocument(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "documents/upload")] HttpRequest req)
     {
         try
         {
-            if (!req.Headers.TryGetValues("Content-Type", out var contentTypeValues))
-                return await BadRequest(req, "Missing Content-Type header.");
+            if (!req.HasFormContentType)
+                return new BadRequestObjectResult("Expected multipart/form-data.");
 
-            var contentType = contentTypeValues.FirstOrDefault();
-            if (string.IsNullOrEmpty(contentType))
-                return await BadRequest(req, "Content-Type header was empty.");
+            var form = await req.ReadFormAsync();
+            var uploadedFile = form.Files.GetFile("file") ?? form.Files.FirstOrDefault();
 
-            var boundary = GetBoundary(contentType);
-            if (string.IsNullOrEmpty(boundary))
-                return await BadRequest(req, "Could not determine multipart boundary.");
+            string? fileName = form["fileName"].ToString();
+            if (string.IsNullOrWhiteSpace(fileName))
+                fileName = uploadedFile?.FileName;
 
-            var reader = new MultipartReader(boundary, req.Body);
-            MultipartSection? section;
-            string? fileName = null;
-            byte[]? fileBytes = null;
-
-            while ((section = await reader.ReadNextSectionAsync()) != null)
+            byte[] fileBytes;
+            if (uploadedFile is { Length: > 0 })
             {
-                var contentDisposition = section.GetContentDispositionHeader();
-                if (contentDisposition == null || !contentDisposition.IsFileDisposition())
-                    continue;
-
-                fileName = contentDisposition.FileName.Value?.Trim('"');
                 using var memoryStream = new MemoryStream();
-                await section.Body.CopyToAsync(memoryStream);
+                await uploadedFile.CopyToAsync(memoryStream);
                 fileBytes = memoryStream.ToArray();
             }
+            else if (!string.IsNullOrWhiteSpace(form["file"]))
+            {
+                fileBytes = Encoding.UTF8.GetBytes(form["file"].ToString());
+                if (string.IsNullOrWhiteSpace(fileName))
+                    fileName = "sample-recipe.txt";
+            }
+            else
+            {
+                return new BadRequestObjectResult("No file found in the request body.");
+            }
 
-            if (fileBytes == null || string.IsNullOrWhiteSpace(fileName))
-                return await BadRequest(req, "No file found in the request body.");
+            fileName = Path.GetFileName(fileName?.Trim('"'));
+            if (string.IsNullOrWhiteSpace(fileName))
+                return new BadRequestObjectResult("A file name is required.");
 
             var extension = Path.GetExtension(fileName);
             if (string.IsNullOrEmpty(extension) || !AllowedExtensions.Contains(extension))
             {
-                return await BadRequest(req,
+                return new BadRequestObjectResult(
                     $"Unsupported file type '{extension}'. Allowed: {string.Join(", ", AllowedExtensions)}.");
             }
 
@@ -83,104 +82,84 @@ public class StaffDocumentFunctions
 
             _logger.LogInformation("Uploaded file '{FileName}' ({Size} bytes) to staff-docs.", fileName, fileBytes.Length);
 
-            var response = req.CreateResponse(HttpStatusCode.Created);
-            response.Headers.Add("Content-Type", "application/json");
-            await response.WriteStringAsync(JsonSerializer.Serialize(new
+            return new ObjectResult(new
             {
                 message = "File uploaded successfully",
                 fileName,
                 sizeBytes = fileBytes.Length
-            }));
-
-            return response;
+            })
+            {
+                StatusCode = StatusCodes.Status201Created
+            };
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Upload failed");
-            var errorResponse = req.CreateResponse(HttpStatusCode.InternalServerError);
-            await errorResponse.WriteStringAsync($"Upload failed: {ex.Message}");
-            return errorResponse;
+            return new ObjectResult($"Upload failed: {ex.Message}")
+            {
+                StatusCode = StatusCodes.Status500InternalServerError
+            };
         }
     }
 
     [Function("ListStaffDocuments")]
-    public async Task<HttpResponseData> ListStaffDocuments(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "documents")] HttpRequestData req)
+    public async Task<IActionResult> ListStaffDocuments(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "documents")] HttpRequest req)
     {
         try
         {
             var files = await _fileShareService.ListFilesAsync();
-
-            var response = req.CreateResponse(HttpStatusCode.OK);
-            response.Headers.Add("Content-Type", "application/json");
-            await response.WriteStringAsync(JsonSerializer.Serialize(files.Select(f => new
+            return new OkObjectResult(files.Select(f => new
             {
                 fileName = f.FileName,
                 sizeBytes = f.SizeBytes,
                 lastModified = f.LastModified
-            })));
-            return response;
+            }));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "List failed");
-            var errorResponse = req.CreateResponse(HttpStatusCode.InternalServerError);
-            await errorResponse.WriteStringAsync($"List failed: {ex.Message}");
-            return errorResponse;
+            return new ObjectResult($"List failed: {ex.Message}")
+            {
+                StatusCode = StatusCodes.Status500InternalServerError
+            };
         }
     }
 
     [Function("DownloadStaffDocument")]
-    public async Task<HttpResponseData> DownloadStaffDocument(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "documents/download/{fileName}")] HttpRequestData req,
+    public async Task<IActionResult> DownloadStaffDocument(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "documents/download/{fileName}")] HttpRequest req,
         string fileName)
     {
         try
         {
+            fileName = Uri.UnescapeDataString(fileName ?? string.Empty);
             if (string.IsNullOrWhiteSpace(fileName))
-                return await BadRequest(req, "File name is required.");
+                return new BadRequestObjectResult("File name is required.");
 
             var download = await _fileShareService.DownloadFileAsync(fileName);
             if (download == null)
-            {
-                var notFoundResponse = req.CreateResponse(HttpStatusCode.NotFound);
-                await notFoundResponse.WriteStringAsync($"File '{fileName}' was not found in staff-docs.");
-                return notFoundResponse;
-            }
+                return new NotFoundObjectResult($"File '{fileName}' was not found in staff-docs.");
 
             var extension = Path.GetExtension(fileName);
             var mimeType = MimeTypes.GetValueOrDefault(extension, "application/octet-stream");
 
-            var response = req.CreateResponse(HttpStatusCode.OK);
-            response.Headers.Add("Content-Type", mimeType);
-            response.Headers.Add("Content-Disposition", $"attachment; filename=\"{fileName}\"");
+            var memoryStream = new MemoryStream();
+            await download.Content.CopyToAsync(memoryStream);
+            memoryStream.Position = 0;
 
-            await download.Content.CopyToAsync(response.Body);
-            return response;
+            return new FileStreamResult(memoryStream, mimeType)
+            {
+                FileDownloadName = fileName
+            };
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Download failed for {FileName}", fileName);
-            var errorResponse = req.CreateResponse(HttpStatusCode.InternalServerError);
-            await errorResponse.WriteStringAsync($"Download failed: {ex.Message}");
-            return errorResponse;
+            return new ObjectResult($"Download failed: {ex.Message}")
+            {
+                StatusCode = StatusCodes.Status500InternalServerError
+            };
         }
-    }
-
-    private static string? GetBoundary(string contentType)
-    {
-        var elements = contentType.Split(';');
-        var boundaryElement = Array.Find(elements, e => e.Trim().StartsWith("boundary=", StringComparison.OrdinalIgnoreCase));
-        if (boundaryElement == null)
-            return null;
-
-        return boundaryElement.Trim()["boundary=".Length..].Trim('"');
-    }
-
-    private static async Task<HttpResponseData> BadRequest(HttpRequestData req, string message)
-    {
-        var response = req.CreateResponse(HttpStatusCode.BadRequest);
-        await response.WriteStringAsync(message);
-        return response;
     }
 }
