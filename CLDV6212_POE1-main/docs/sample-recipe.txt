@@ -1,0 +1,11 @@
+CoffeeNChill Barista Recipe Sheet
+==================================
+
+Espresso (COF-001)
+- 18g ground coffee
+- 25-30 second extraction
+- Serve immediately
+
+Cleaning Schedule
+- Group head: every hour
+- Steam wand: after each use
