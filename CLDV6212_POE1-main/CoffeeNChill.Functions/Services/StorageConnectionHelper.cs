@@ -27,7 +27,6 @@ public static class StorageConnectionHelper
                $"AccountKey={DevStoreAccountKey};" +
                $"BlobEndpoint=http://{azuriteHost}:10000/devstoreaccount1;" +
                $"QueueEndpoint=http://{azuriteHost}:10001/devstoreaccount1;" +
-               $"TableEndpoint=http://{azuriteHost}:10002/devstoreaccount1;" +
-               $"FileEndpoint=http://{azuriteHost}:10000/devstoreaccount1;";
+               $"TableEndpoint=http://{azuriteHost}:10002/devstoreaccount1;";
     }
 }
