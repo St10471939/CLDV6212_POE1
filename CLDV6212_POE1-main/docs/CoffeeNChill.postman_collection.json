@@ -306,13 +306,20 @@
               "mode": "formdata",
               "formdata": [
                 {
+                  "key": "fileName",
+                  "value": "sample-recipe.txt",
+                  "type": "text"
+                },
+                {
                   "key": "file",
-                  "type": "file",
-                  "src": "sample-recipe.txt"
+                  "value": "CoffeeNChill Barista Recipe Sheet\\nEspresso (COF-001)\\n- 18g ground coffee\\n- 25-30 second extraction",
+                  "type": "text",
+                  "contentType": "text/plain"
                 }
               ]
             },
-            "url": "{{baseUrl}}/documents/upload"
+            "url": "{{baseUrl}}/documents/upload",
+            "description": "Sends multipart form fields (not a disk file) so Collection Runner can upload without a Postman working-directory file."
           }
         },
         {
@@ -361,7 +368,8 @@
                   "});",
                   "",
                   "pm.test('Content-Disposition header present', function () {",
-                  "    pm.expect(pm.response.headers.get('Content-Disposition')).to.include('attachment');",
+                  "    const disposition = pm.response.headers.get('Content-Disposition') || pm.response.headers.get('content-disposition') || '';",
+                  "    pm.expect(disposition.toLowerCase()).to.include('attachment');",
                   "});"
                 ],
                 "type": "text/javascript"
@@ -390,7 +398,7 @@
           ],
           "request": {
             "method": "GET",
-            "url": "{{baseUrl}}/documents/download/does-not-exist.pdf"
+            "url": "{{baseUrl}}/documents/download/does-not-exist.txt"
           }
         }
       ]
