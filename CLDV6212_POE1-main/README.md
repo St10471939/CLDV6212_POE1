@@ -201,7 +201,7 @@ CLDV6212_POE1/
 
 ## Video
 
-YouTube walkthrough: _[Add your unlisted YouTube link here]_
+YouTube walkthrough: https://youtu.be/2T40yZ65yUc
 
 The video demonstrates:
 
